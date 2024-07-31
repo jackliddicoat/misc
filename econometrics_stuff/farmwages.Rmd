@@ -1,0 +1,84 @@
+---
+title: "The Effect of SB1070 on Farm-worker Wages in Arizona"
+author: "Jack Liddicoat"
+date: "2024-07-31"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+## AZ SB1070 Effect on Wage Replication
+
+This was inspired by Alex Nowrasteh at the Cato Institute. His work on this issue can be found here: \textcolor{blue}{https://www.cato.org/blog/wages-did-not-rise-arizona-after-sb1070}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load packages
+
+```{r, message=FALSE}
+library(stargazer)
+library(tidyverse)
+library(ggplot2)
+theme_set(theme_bw())
+```
+
+Read the file into R
+
+```{r, message=FALSE}
+fw <- readr::read_csv("/Users/22liddicoat/Downloads/farmwages.csv")
+```
+
+Look at the data
+
+```{r}
+fw %>% head()
+```
+
+```{r}
+fw %>% 
+  ggplot(mapping = aes(x = year, y = realwage, color = state)) +
+  geom_line() +
+  geom_vline(xintercept = 2010) +
+  scale_color_manual(values = c("darkgreen", "red")) +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  labs(x = "", y = "Hourly Wage (2012 CPI Adjusted)") +
+  annotate("text", x = 2006, y = 11.25, label = "SB 1070 is adopted") +
+  theme(legend.position = "top")
+```
+
+```{r}
+fw %>% 
+  select(-nomwage) %>% 
+  pivot_wider(names_from = "state", values_from = "realwage") %>% 
+  mutate(diff = AZ - NM) %>% 
+  ggplot(aes(year, diff)) +
+  geom_line() +
+  geom_point() +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(labels = scales::dollar_format(), limits = c(-2.5, 2.5))
+```
+
+
+From the plots, it looks like farm wages in Arizona started to rise faster compared to New Mexico far after the law was instituted. This suggests that other factors may be at play.
+
+We can play "eye-ball econometrics" all we want, but we can check if our observation is true statistically using a Difference-in-Difference (DiD) regression. More information on this kind of regression technique can be found here: \textcolor{blue}{https://www.princeton.edu/~otorres/DID101R.pdf}
+
+```{r}
+df <- fw %>% 
+  mutate(time = ifelse(year >= 2010, 1, 0),
+         treated = ifelse(state == 'AZ', 1, 0),
+         did = time * treated)
+```
+
+```{r}
+did_reg <- lm(realwage ~ time + treated + did, data = df)
+```
+
+```{r, results = "asis", header = FALSE, warning=FALSE}
+stargazer(did_reg, title = "DiD Estimates for the Effect of SB1070 on Wages")
+```
+
+As can be seen in the regression, our coefficient for the DiD variable, which is the variable of interest in our regression, is -0.214 suggesting that wages in Arizona slightly *declined* relative to wages in New Mexico after 2010. However, since our standard error is 0.480, this gives us a 95% confidence interval of [-1.15, 0.73] ($\beta_{did} \pm 1.96*{SE}_{did}$). Since the confidence interval contains 0, we fail to reject the null hypothesis that the law had no effect on wages.
+
